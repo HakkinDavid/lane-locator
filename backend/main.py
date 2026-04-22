@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torchvision.transforms.functional as TF
 from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from torchvision.models.segmentation import deeplabv3_resnet50
 
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 @app.post("/predict")
@@ -58,9 +60,12 @@ async def predict(file: UploadFile = File(...)):
         Image.fromarray((mask * 255).astype(np.uint8)).resize(orig_size, Image.NEAREST)
     ) > 0
 
+    overlay = np.array(image)
+    overlay[mask] = (overlay[mask] * 0.5 + np.array([255, 255, 0]) * 0.3).astype(np.uint8)
+
     buf = io.BytesIO()
-    Image.fromarray((mask * 255).astype(np.uint8), mode="L").save(buf, format="PNG")
+    Image.fromarray(overlay).save(buf, format="PNG")
 
     return {
-        "mask": base64.b64encode(buf.getvalue()).decode(),
+        "overlay": base64.b64encode(buf.getvalue()).decode(),
     }
