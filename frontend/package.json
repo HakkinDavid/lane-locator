@@ -1,0 +1,11 @@
+{
+  "name": "lame-lane-locator",
+  "version": "1.0.0",
+  "description": "Detección de carriles enfocada a Latinoamérica",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "HakkinDavid",
+  "license": "ISC"
+}
