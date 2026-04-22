@@ -1,2 +1,2 @@
-<h1>Welcome to SvelteKit</h1>
-<p>Visit <a href="https://svelte.dev/docs/kit">svelte.dev/docs/kit</a> to read the documentation</p>
+<h1>Lane Locator</h1>
+<p>Arranca el coche, detente a tomar una fotografía del carril, espera a tener señal, conéctate, carga la imagen en el espacio siguiente y, <i>voilá</i>, te indicaremos dónde es el carril a seguir.</p>
