@@ -19,7 +19,7 @@ MODEL_PATH = "model.pth"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if not __import__("os").path.exists(MODEL_PATH):
-        gdown.download(MODEL_URL, MODEL_PATH, quiet=False, fuzzy=True)
+        gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
