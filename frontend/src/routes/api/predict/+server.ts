@@ -21,6 +21,7 @@ export const POST: RequestHandler = async ({ request, fetch }) => {
 		const datos = await request.formData();
 		const archivo = datos.get('file');
 		const url = datos.get('targetUrl');
+		const soloMascara = datos.get('only_mask');
 
 		if (!(archivo instanceof File)) {
 			return json({ error: 'No se recibió ningún archivo.' }, { status: 400 });
@@ -32,8 +33,10 @@ export const POST: RequestHandler = async ({ request, fetch }) => {
 
 		const envio = new FormData();
 		envio.append('file', archivo, archivo.name);
+		const destino = new URL(normalizarUrl(url));
+		if (soloMascara === 'true') destino.searchParams.set('only_mask', 'true');
 
-		const respuesta = await fetch(normalizarUrl(url), {
+		const respuesta = await fetch(destino, {
 			method: 'POST',
 			body: envio
 		});
