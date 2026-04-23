@@ -43,7 +43,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
+async def predict(file: UploadFile = File(...), only_mask: bool = False):
     image = Image.open(io.BytesIO(await file.read())).convert("RGB")
     orig_size = image.size
 
@@ -59,9 +59,14 @@ async def predict(file: UploadFile = File(...)):
     mask = np.asarray(
         Image.fromarray((mask * 255).astype(np.uint8)).resize(orig_size, Image.NEAREST)
     ) > 0
-
-    overlay = np.array(image)
-    overlay[mask] = (overlay[mask] * 0.5 + np.array([255, 255, 0]) * 0.3).astype(np.uint8)
+    
+    overlay = None
+    
+    if only_mask:
+        overlay = mask
+    else:
+        overlay = np.array(image)
+        overlay[mask] = (overlay[mask] * 0.5 + np.array([255, 255, 0]) * 0.3).astype(np.uint8)
 
     buf = io.BytesIO()
     Image.fromarray(overlay).save(buf, format="PNG")
