@@ -2,6 +2,20 @@ import { json } from '@sveltejs/kit';
 
 import type { RequestHandler } from './$types';
 
+function normalizarUrl(url: string) {
+	const limpia = url.trim();
+	if (!limpia) {
+		throw new Error('Ingresa la URL del backend.');
+	}
+
+	const destino = new URL(limpia);
+	if (!['http:', 'https:'].includes(destino.protocol)) {
+		throw new Error('La URL del backend debe usar http o https.');
+	}
+
+	return destino.toString();
+}
+
 export const POST: RequestHandler = async ({ request, fetch }) => {
 	try {
 		const datos = await request.formData();
@@ -19,7 +33,7 @@ export const POST: RequestHandler = async ({ request, fetch }) => {
 		const envio = new FormData();
 		envio.append('file', archivo, archivo.name);
 
-		const respuesta = await fetch(url, {
+		const respuesta = await fetch(normalizarUrl(url), {
 			method: 'POST',
 			body: envio
 		});
