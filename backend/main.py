@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from torchvision.models.segmentation import deeplabv3_resnet50
 
-MODEL_URL = "https://drive.google.com/file/d/1qf4zs-kV3zdtd5A3qP0wAt9P4gNZa7OK/view?usp=sharing"
+MODEL_URL = "https://drive.google.com/file/d/1RBmVFYECQxnO6ITS4mbf9hKOvSB-LcVp/view?usp=sharing"
 MODEL_PATH = "model.pth"
 
 
