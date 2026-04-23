@@ -12,12 +12,14 @@
 	let resultado = $state('');
 	let error = $state('');
 	let procesando = $state(false);
+	let procesandoCamara = $state(false);
 	let camaraEncendida = $state(false);
 	let iniciandoCamara = $state(false);
 
 	let video = $state<HTMLVideoElement | null>(null);
 	let lienzo = $state<HTMLCanvasElement | null>(null);
 	let flujo = $state<MediaStream | null>(null);
+	let intervalo: ReturnType<typeof setInterval> | null = null;
 
 	function limpiar() {
 		error = '';
@@ -33,7 +35,9 @@
 
 	function cambiarArchivo(evento: Event) {
 		const input = evento.currentTarget as HTMLInputElement;
-		ponerArchivo(input.files?.[0] ?? null);
+		const elegido = input.files?.[0] ?? null;
+		ponerArchivo(elegido);
+		if (elegido) detectar(elegido);
 	}
 
 	async function encenderCamara() {
@@ -59,6 +63,9 @@
 			}
 
 			camaraEncendida = true;
+			if (intervalo) clearInterval(intervalo);
+			intervalo = setInterval(detectarCamara, 100);
+			detectarCamara();
 		} catch {
 			error = 'Tu cámara no se ha prendido. Pero a fuerza no será.';
 			apagarCamara();
@@ -68,13 +75,17 @@
 	}
 
 	function apagarCamara() {
+		if (intervalo) clearInterval(intervalo);
+		intervalo = null;
+		procesandoCamara = false;
+		resultado = '';
 		flujo?.getTracks().forEach((pista) => pista.stop());
 		flujo = null;
 		if (video) video.srcObject = null;
 		camaraEncendida = false;
 	}
 
-	function capturar() {
+	function detectarCamara() {
 		if (!video || !lienzo) {
 			error = 'Y hoy resulta, que tu cámara no está lista para usarse.';
 			return;
@@ -85,32 +96,77 @@
 			return;
 		}
 
+		if (procesandoCamara || !url.trim()) return;
+
 		lienzo.width = video.videoWidth;
 		lienzo.height = video.videoHeight;
 		const contexto = lienzo.getContext('2d');
-		if (!contexto) {
-			error = 'Por mi parte, no puedo procesar la captura.';
-			return;
-		}
+		if (!contexto) return;
 
 		contexto.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
 		lienzo.toBlob(
-			(blob) => {
-				if (!blob) {
-					error = 'Ni siquiera fue posible generar el archivo.';
-					return;
-				}
+			async (blob) => {
+				if (!blob) return;
 
-                // el formato blob no es de dios
-				ponerArchivo(new File([blob], `captura-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+				procesandoCamara = true;
+				try {
+					const datos = new FormData();
+					datos.append(
+						'file',
+						new File([blob], `fotograma-${Date.now()}.jpg`, { type: 'image/jpeg' })
+					);
+					datos.append('targetUrl', url.trim());
+					datos.append('only_mask', 'true');
+
+					const respuesta = await fetch('/api/predict', {
+						method: 'POST',
+						body: datos
+					});
+					const cuerpo = await respuesta.json();
+					if (respuesta.ok && cuerpo?.overlay) {
+						resultado = await colorearMascara(`data:image/png;base64,${cuerpo.overlay}`);
+					}
+				} finally {
+					procesandoCamara = false;
+				}
 			},
 			'image/jpeg',
 			0.9
 		);
 	}
 
-	async function detectar() {
-		if (!archivo) {
+	function colorearMascara(mascara: string) {
+		return new Promise<string>((resolver) => {
+			const imagen = new Image();
+			imagen.onload = () => {
+				if (!lienzo) return resolver(mascara);
+
+				lienzo.width = imagen.naturalWidth;
+				lienzo.height = imagen.naturalHeight;
+				const contexto = lienzo.getContext('2d');
+				if (!contexto) return resolver(mascara);
+
+				contexto.drawImage(imagen, 0, 0);
+				const pixeles = contexto.getImageData(0, 0, lienzo.width, lienzo.height);
+
+				for (let i = 0; i < pixeles.data.length; i += 4) {
+					const visible = pixeles.data[i] > 127;
+					pixeles.data[i] = 255;
+					pixeles.data[i + 1] = 220;
+					pixeles.data[i + 2] = 0;
+					pixeles.data[i + 3] = visible ? 140 : 0;
+				}
+
+				contexto.putImageData(pixeles, 0, 0);
+				resolver(lienzo.toDataURL('image/png'));
+			};
+			imagen.onerror = () => resolver(mascara);
+			imagen.src = mascara;
+		});
+	}
+
+	async function detectar(elegido = archivo) {
+		if (!elegido) {
 			error = 'Y hoy resulta, que no confiarías en mí tu galería.';
 			return;
 		}
@@ -125,7 +181,7 @@
 
 		try {
 			const datos = new FormData();
-			datos.append('file', archivo);
+			datos.append('file', elegido);
 			datos.append('targetUrl', url.trim());
 
 			const respuesta = await fetch('/api/predict', {
@@ -159,9 +215,10 @@
 		limpiar();
 		if (siguiente === 'archivo') {
 			apagarCamara();
-            console.log("Carpetazo y aquí no pasó nada.");
-		} else {
+			console.log('Carpetazo y aquí no pasó nada.');
+		} else if (!camaraEncendida && !iniciandoCamara) {
 			console.log('Cámara, carnal. Muestra los benitos o verás al padrecito santo.');
+			encenderCamara();
 		}
 	}
 
@@ -232,13 +289,22 @@
 				/>
 			{:else}
 				<div class="grid gap-3">
-					<video
-						bind:this={video}
-						autoplay
-						class="block aspect-[4/3] w-full bg-gray-200 object-cover"
-						muted
-						playsinline
-					></video>
+					<div class="relative aspect-[4/3] w-full overflow-hidden bg-gray-200">
+						<video
+							bind:this={video}
+							autoplay
+							class="block h-full w-full object-cover"
+							muted
+							playsinline
+						></video>
+						{#if resultado}
+							<img
+								alt="Máscara"
+								class="pointer-events-none absolute inset-0 h-full w-full object-cover"
+								src={resultado}
+							/>
+						{/if}
+					</div>
 					<div class="flex gap-3 max-[700px]:flex-col max-[700px]:items-stretch">
 						<button
 							class="cursor-pointer rounded-md border border-gray-400 bg-white px-3 py-2 disabled:cursor-default disabled:opacity-60"
@@ -247,14 +313,6 @@
 							type="button"
 						>
 							{iniciandoCamara ? 'Iniciando...' : 'Encender'}
-						</button>
-						<button
-							class="cursor-pointer rounded-md border border-gray-400 bg-white px-3 py-2 disabled:cursor-default disabled:opacity-60"
-							disabled={!camaraEncendida}
-							onclick={capturar}
-							type="button"
-						>
-							Capturar
 						</button>
 						<button
 							class="cursor-pointer rounded-md border border-gray-400 bg-white px-3 py-2 disabled:cursor-default disabled:opacity-60"
@@ -268,47 +326,38 @@
 				</div>
 			{/if}
 
-			<div class="flex gap-3 max-[700px]:flex-col max-[700px]:items-stretch">
-				<button
-					class="cursor-pointer rounded-md border border-gray-400 bg-white px-3 py-2 disabled:cursor-default disabled:opacity-60"
-					disabled={!archivo || procesando}
-					onclick={detectar}
-					type="button"
-				>
-					{procesando ? 'Procesando...' : 'Detectar carril'}
-				</button>
-			</div>
-
 			{#if error}
 				<p class="mt-3 text-sm text-red-700">{error}</p>
 			{/if}
 		</div>
 
-		<div class="flex flex-wrap gap-3 max-[700px]:flex-col max-[700px]:items-stretch">
-			<div class="flex-[1_1_320px] overflow-hidden border border-gray-300 bg-white">
-				{#if vistaPrevia}
-					<img
-						alt="Imagen seleccionada"
-						class="block aspect-[4/3] w-full bg-gray-200 object-cover"
-						src={vistaPrevia}
-					/>
-				{:else}
-					<div class="block aspect-[4/3] w-full bg-gray-200 object-cover"></div>
-				{/if}
-			</div>
+		{#if modo === 'archivo'}
+			<div class="flex flex-wrap gap-3 max-[700px]:flex-col max-[700px]:items-stretch">
+				<div class="flex-[1_1_320px] overflow-hidden border border-gray-300 bg-white">
+					{#if vistaPrevia}
+						<img
+							alt="Imagen seleccionada"
+							class="block aspect-[4/3] w-full bg-gray-200 object-cover"
+							src={vistaPrevia}
+						/>
+					{:else}
+						<div class="block aspect-[4/3] w-full bg-gray-200 object-cover"></div>
+					{/if}
+				</div>
 
-			<div class="flex-[1_1_320px] overflow-hidden border border-gray-300 bg-white">
-				{#if resultado}
-					<img
-						alt="Resultado"
-						class="block aspect-[4/3] w-full bg-gray-200 object-cover"
-						src={resultado}
-					/>
-				{:else}
-					<div class="block aspect-[4/3] w-full bg-gray-200 object-cover"></div>
-				{/if}
+				<div class="flex-[1_1_320px] overflow-hidden border border-gray-300 bg-white">
+					{#if resultado}
+						<img
+							alt="Resultado"
+							class="block aspect-[4/3] w-full bg-gray-200 object-cover"
+							src={resultado}
+						/>
+					{:else}
+						<div class="block aspect-[4/3] w-full bg-gray-200 object-cover"></div>
+					{/if}
+				</div>
 			</div>
-		</div>
+		{/if}
 
 		<canvas bind:this={lienzo} class="hidden"></canvas>
 	</div>
